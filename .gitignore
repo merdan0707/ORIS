@@ -1,0 +1,27 @@
+# === Сборка и бинарники (C# / .NET) ===
+[Bb]in/
+[Oo]bj/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# === Кэш и инструменты .NET ===
+.dotnet/
+project.lock.json
+project.fragment.lock.json
+*.nuget.props
+*.nuget.targets
+
+# === Настройки IDE (Visual Studio, Rider, VS Code) ===
+.vs/
+.idea/
+.vscode/
+*.DotSettings.user
+
+# === Окружение, секреты и системные файлы ===
+.env
+.env.local
+*.env
+.DS_Store
+Thumbs.db
