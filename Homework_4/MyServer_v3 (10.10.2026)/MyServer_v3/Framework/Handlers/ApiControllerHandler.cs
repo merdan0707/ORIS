@@ -78,20 +78,7 @@ public class ApiControllerHandler : RequestHandler
 
             if (request.HttpMethod == "GET")
             {
-                if (request.Url.LocalPath.Contains("send?"))
-                {
-                    string url = request.Url.LocalPath;
-                    Uri myUri = new Uri("http://localhost/" + url);
-                    var queryParameters = HttpUtility.ParseQueryString(myUri.Query);
-                    string to = queryParameters["to"];     // "sbd"
-                    string hero = queryParameters["hero"]; // "sbd"
-                    parameters[0] = Convert.ChangeType(to, methodParams[0].ParameterType);
-                    parameters[1] = Convert.ChangeType(hero, methodParams[1].ParameterType);
-                }
-                else
-                {
-                    parameters = ExtractParametersFromUrl(segments, endpoint.Method);
-                }
+                parameters = ExtractParametersFromUrl(segments, endpoint.Method);
             }
             else // POST
             {
@@ -192,7 +179,6 @@ public class ApiControllerHandler : RequestHandler
 
         return parameters;
     }
-    
 
     private static async Task WriteJsonResponseAsync(HttpListenerResponse response, string json)
     {
