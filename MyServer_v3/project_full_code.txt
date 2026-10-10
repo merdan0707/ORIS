@@ -1,0 +1,722 @@
+﻿--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Controllers\AuthController.cs ---
+using MyServer_v3.Framework.Attributes;
+using MyServer_v3.Framework.Handlers;
+
+namespace MyServer_v3.Controllers;
+
+[HttpController]
+public class AuthController
+{
+    [HttpPost]
+    public string Login(string email, string password)
+    {
+        Console.WriteLine($"Email: {email}, Password: {password}");
+        return $"Login successful for {email}";
+    }
+
+    [HttpGet]
+    public string GetUser(int id)
+    {
+        Console.WriteLine($"[GET USER] ID: {id}");
+        return $"User with ID {id} found";
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Attributes\HttpControllerAttribute.cs ---
+namespace MyServer_v3.Framework.Attributes;
+
+[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+public sealed class HttpControllerAttribute : Attribute
+{
+    
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Attributes\HttpGetAttribute.cs ---
+namespace MyServer_v3.Framework.Attributes;
+
+[AttributeUsage(AttributeTargets.Method, Inherited = false)]
+public sealed class HttpGetAttribute : Attribute
+{
+    
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Attributes\HttpPostAttribute.cs ---
+namespace MyServer_v3.Framework.Attributes;
+
+[AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
+public sealed class HttpPostAttribute : Attribute
+{
+    
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Configuration\ConfigService.cs ---
+using System.Text.Json;
+
+namespace MyServer_v3.Framework.Configuration;
+
+public sealed class ConfigService
+{
+    private static ConfigService? _instance;
+    private static readonly object _lock = new();
+
+    public ServerSettings Settings { get;}
+
+    private ConfigService()
+    {
+        const string configFileName = "server.json";
+
+        if (!File.Exists(configFileName))
+            throw new FileNotFoundException($"Settings file '{configFileName}' not found.");
+
+        var json = File.ReadAllText(configFileName);
+        Settings = JsonSerializer.Deserialize<ServerSettings>(json)
+            ?? throw new InvalidOperationException("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ server.json");
+
+        if (!Settings.IsValid)
+            throw new InvalidOperationException("РќР°СЃС‚СЂРѕР№РєРё РІ server.json РЅРµРєРѕСЂСЂРµРєС‚РЅС‹.");
+    }
+
+    public static ConfigService Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                lock (_lock)
+                {
+                    _instance ??= new ConfigService();
+                }
+            }
+
+            return _instance;
+        }
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Configuration\ServerSettings.cs ---
+namespace MyServer_v3.Framework.Configuration;
+
+public class ServerSettings
+{
+    public string Host { get; set; } = "127.0.1.1";
+    public int Port { get; set; } = 8888;
+    public string Path { get; set; } = "static/";
+
+    public bool IsValid => Port is > 0 and <= 65535
+                           && !string.IsNullOrEmpty(Host);
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Handlers\ApiControllerHandler.cs ---
+using System.Net;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using MyServer_v3.Framework.Attributes;
+
+namespace MyServer_v3.Framework.Handlers;
+
+public class ApiControllerHandler : RequestHandler
+{
+    private Dictionary<string, EndpointMetadata> _routes;
+
+    public ApiControllerHandler()
+    {
+        _routes = new Dictionary<string, EndpointMetadata>(StringComparer.OrdinalIgnoreCase);
+        ScanAssembly();
+    }
+
+    private void ScanAssembly()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var controllerTypes = assembly.GetTypes()
+            .Where(t => t.IsClass && Attribute.IsDefined(t, typeof(HttpControllerAttribute)));
+
+        foreach (var controllerType in controllerTypes)
+        {
+            var controllerName = controllerType.Name;
+            if (controllerName.EndsWith("Controller"))
+                controllerName = controllerName[..^10]; //СѓР±РёСЂР°РµРј РїРѕСЃР»РµРґРЅРёРµ 10 СЃРёРјРІРѕР»РѕРІ
+            controllerName = controllerName.ToLowerInvariant();
+
+            var methods = controllerType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => Attribute.IsDefined(m, typeof(HttpGetAttribute)) || 
+                            Attribute.IsDefined(m, typeof(HttpPostAttribute)));
+
+            foreach (var method in methods)
+            {
+                var httpMethod = Attribute.IsDefined(method, typeof(HttpGetAttribute))
+                    ? "GET"
+                    : "POST";
+
+                var methodName = method.Name.ToLowerInvariant();
+                var routeKey = $"api/{controllerName}/{methodName}";
+
+                _routes[routeKey] = new EndpointMetadata(controllerType, method, httpMethod);
+                Console.WriteLine($"[API] Р—Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ РїСѓС‚СЊ: {routeKey} ({httpMethod})");
+            }
+        }
+    }
+
+    protected override async Task<bool> HandleCoreAsync(HttpListenerContext context)
+    {
+        var request = context.Request;
+        var response = context.Response;
+
+        var path = request.Url.LocalPath.TrimStart('/').ToLowerInvariant();
+
+        if (!path.StartsWith("api/"))
+            return false;
+
+        if (!_routes.TryGetValue(path, out var endpoint))
+            return false;
+
+        if (endpoint.HttpMethod != request.HttpMethod)
+        {
+            response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+            await WriteResponseAsync(response, "Method Not Allowed");
+            return true;
+        }
+
+        try
+        {
+            object[] parameters;
+
+            if (request.HttpMethod == "GET")
+            {
+                parameters = ExtractParametersFromUrl(request.Url.Segments, endpoint.Method);
+            }
+            else //POST
+            {
+                parameters = await ExtractParametersFromBodyAsync(request, endpoint.Method);
+            }
+
+            var controllerInstance = Activator.CreateInstance(endpoint.ControllerType);
+            var result = endpoint.Method.Invoke(controllerInstance, parameters);
+
+            if (result is Task task)
+            {
+                await task;
+
+                var resultProperty = task.GetType().GetProperty("Result");
+                result = resultProperty?.GetValue(task);
+            }
+
+            var json = JsonSerializer.Serialize(result);
+            await WriteJsonResponseAsync(response, json);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            await WriteResponseAsync(response, $"Error: {ex.Message}");
+            return true;
+        }
+    }
+
+    private async Task<object[]> ExtractParametersFromBodyAsync(HttpListenerRequest request, MethodInfo method)
+    {
+        var methodParams = method.GetParameters();
+        var parameters = new object[methodParams.Length];
+
+        using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+        var body = await reader.ReadToEndAsync();
+        
+        // РїР°СЂСЃРёРј form-urlencoded: "email=user@mail.com&password=123"
+        var formData = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pair in body.Split('&'))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 2)
+            {
+                var key = Uri.UnescapeDataString(parts[0]);
+                var value = Uri.UnescapeDataString(parts[1]);
+                formData[key] = value;
+            }
+        }
+
+        for (int i = 0; i < methodParams.Length; i++)
+        {
+            var paramName = methodParams[i].Name;
+
+            if (formData.TryGetValue(paramName, out var value))
+            {
+                parameters[i] = Convert.ChangeType(value, methodParams[i].ParameterType);
+            }
+            else if (methodParams[i].HasDefaultValue)
+            {
+                parameters[i] = methodParams[i].DefaultValue!;
+            }
+            else
+            {
+                throw new ArgumentException($"РџСЂРѕРїСѓС€РµРЅ РїР°СЂР°РјРµС‚СЂ: {paramName}");
+            }
+        }
+
+        return parameters;
+    }
+
+    private object[] ExtractParametersFromUrl(string[] segments, MethodInfo method)
+    {
+        var methodParams = method.GetParameters();
+        var parameters = new object[methodParams.Length];
+        
+        // СЃРµРіРјРµРЅС‚С‹ URL: [1: "/", 2: "api/", 3: "auth/", 4: "login/", "param1/", "param2/"]
+        var paramSegments = segments.Skip(4).ToArray();
+
+        for (int i = 0; i < methodParams.Length; i++)
+        {
+            if (i < paramSegments.Length)
+            {
+                var value = paramSegments[i].TrimEnd('/');
+                value = Uri.UnescapeDataString(value);
+
+                parameters[i] = Convert.ChangeType(value, methodParams[i].ParameterType);
+            }
+            else
+            {
+                if (methodParams[i].HasDefaultValue)
+                    parameters[i] = methodParams[i].DefaultValue!;
+                else
+                    throw new ArgumentException($"РџСЂРѕРїСѓС€РµРЅ РїР°СЂР°РјРµС‚СЂ: {methodParams[i].Name}");
+            }
+        }
+
+        return parameters;
+    }
+
+    private static async Task WriteJsonResponseAsync(HttpListenerResponse response, string json)
+    {
+        response.ContentType = "application/json; charset=utf-8";
+        response.StatusCode = (int)HttpStatusCode.OK;
+
+        var buffer = Encoding.UTF8.GetBytes(json);
+        response.ContentLength64 = buffer.Length;
+
+        await using var output = response.OutputStream;
+        await output.WriteAsync(buffer);
+        await output.FlushAsync();
+    }
+    
+    private static async Task WriteResponseAsync(HttpListenerResponse response, string content)
+    {
+        response.ContentType = "text/plain; charset=utf-8";
+
+        var buffer = Encoding.UTF8.GetBytes(content);
+        response.ContentLength64 = buffer.Length;
+
+        await using var output = response.OutputStream;
+        await output.WriteAsync(buffer);
+        await output.FlushAsync();
+    }
+
+    private record EndpointMetadata(Type ControllerType, MethodInfo Method, string HttpMethod);
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Handlers\NotFoundHandler.cs ---
+using System.Net;
+using System.Text;
+
+namespace MyServer_v3.Framework.Handlers;
+
+public class NotFoundHandler : RequestHandler
+{
+    private readonly byte[] _notFoundContentBytes;
+    private readonly string _notFoundContentType;
+
+    public NotFoundHandler(string staticPath)
+    {
+        var notFoundPath = Path.Combine(staticPath, "404.html");
+
+        if (File.Exists(notFoundPath))
+        {
+            _notFoundContentBytes = File.ReadAllBytes(notFoundPath);
+            _notFoundContentType = "text/html; charset=utf-8";
+        }
+        else
+        {
+            _notFoundContentBytes = Encoding.UTF8.GetBytes("<h1>404 Not Found</h1>");
+            _notFoundContentType = "text/html; charset=utf-8";
+        }
+    }
+
+    protected override async Task<bool> HandleCoreAsync(HttpListenerContext context)
+    {
+        var response = context.Response;
+
+        response.StatusCode = (int)HttpStatusCode.NotFound;
+        response.ContentType = _notFoundContentType;
+        response.ContentLength64 = _notFoundContentBytes.Length;
+
+        await using var output = response.OutputStream;
+        await output.WriteAsync(_notFoundContentBytes);
+        await output.FlushAsync();
+
+        return true;
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Handlers\RequestHandler.cs ---
+using System.Net;
+
+namespace MyServer_v3.Framework.Handlers;
+
+public abstract class RequestHandler
+{
+    private RequestHandler? _successor;
+
+    public RequestHandler SetNext(RequestHandler successor)
+    {
+        _successor = successor;
+        return successor;
+    }
+
+    public async Task<bool> HandleAsync(HttpListenerContext context)
+    {
+        bool handled = await HandleCoreAsync(context);
+
+        if (!handled && _successor != null)
+            return await _successor.HandleAsync(context);
+
+        return handled;
+    }
+
+    protected abstract Task<bool> HandleCoreAsync(HttpListenerContext context);
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Handlers\StaticFileHandler.cs ---
+using System.Net;
+using MyServer_v3.Utils;
+
+namespace MyServer_v3.Framework.Handlers;
+
+public class StaticFileHandler : RequestHandler
+{
+    private readonly string _rootDirectory;
+
+    public StaticFileHandler(string rootDirectory)
+    {
+        _rootDirectory = Path.GetFullPath(rootDirectory);
+    }
+
+    protected override async Task<bool> HandleCoreAsync(HttpListenerContext context)
+    {
+        var request = context.Request;
+        var response = context.Response;
+        
+        var urlPath = request.Url.LocalPath;
+        
+        if (urlPath.Equals("/login", StringComparison.OrdinalIgnoreCase))
+        {
+            urlPath = "/LoginForm/login.html";
+        }
+        
+        var physicalPath = UriFactory.ResolveSafePath(urlPath, _rootDirectory);
+        
+        if (physicalPath == null)
+        {
+            return false;
+        }
+
+        if (Directory.Exists(physicalPath))
+        {
+            var indexPath = Path.Combine(physicalPath, "index.html");
+            if (File.Exists(indexPath))
+            {
+                physicalPath = indexPath;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        if (!File.Exists(physicalPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fileBytes = await File.ReadAllBytesAsync(physicalPath);
+            response.ContentType = MimeTypeHandler.GetMimeType(physicalPath);
+            response.ContentLength64 = fileBytes.Length;
+            response.StatusCode = (int)HttpStatusCode.OK;
+            
+            await using var output = response.OutputStream;
+            await output.WriteAsync(fileBytes);
+            await output.FlushAsync();
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"РћС€РёР±РєР° РїСЂРё С‡С‚РµРЅРёРё С„Р°Р№Р»Р° {physicalPath}: {ex.Message}");
+            return false;
+        }
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Framework\Http\HttpServer.cs ---
+using System.Net;
+using MyServer_v3.Framework.Configuration;
+using MyServer_v3.Framework.Handlers;
+
+namespace MyServer_v3.Framework.Http;
+
+public class HttpServer : IAsyncDisposable
+{
+    private readonly HttpListener _listener;
+    private readonly RequestHandler _chainRoot;
+    private CancellationTokenSource? _cts;
+    private bool _isRunning;
+
+    public HttpServer()
+    {
+        var config = ConfigService.Instance.Settings;
+        var prefix = $"http://{config.Host}:{config.Port}/";
+
+        _listener = new HttpListener();
+        _listener.Prefixes.Add(prefix);
+
+        var apiHandler = new ApiControllerHandler();
+        var staticHandler = new StaticFileHandler(config.Path);
+        var notFoundHandler = new NotFoundHandler(config.Path);
+
+        _chainRoot = apiHandler;
+        apiHandler.SetNext(staticHandler).SetNext(notFoundHandler);
+
+        Console.WriteLine("[CHAIN] Built: API -> Static -> NotFound");
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isRunning) return;
+
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _listener.Start();
+        _isRunning = true;
+
+        Console.WriteLine($"[SERVER] Started: {_listener.Prefixes.First()}");
+
+        _ = ListenLoopAsync(_cts.Token);
+    }
+
+    private async Task ListenLoopAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                var context = await _listener.GetContextAsync().WaitAsync(token);
+                _ = HandleRequestAsync(context, token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (HttpListenerException) when (_isRunning)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Getting context: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken token)
+    {
+        try
+        {
+            Console.WriteLine($"[REQUEST] {context.Request.HttpMethod} {context.Request.Url.LocalPath}");
+
+            await _chainRoot.HandleAsync(context).WaitAsync(token);
+            Console.WriteLine($"[RESPONSE] {context.Response.StatusCode}");
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Handling request: {ex.Message}");
+            try
+            {
+                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                context.Response.Close();
+            }
+            catch
+            {
+                //ignore
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_isRunning) return;
+
+        _isRunning = false;
+        if (_cts != null)
+        {
+            await _cts.CancelAsync();
+            _cts.Dispose();
+        }
+        
+        _listener.Stop();
+        _listener.Close();
+
+        Console.WriteLine("[SERVER] Stopped.");
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Utils\MimeTypeHandler.cs ---
+namespace MyServer_v3.Utils;
+
+public static class MimeTypeHandler
+{
+    private static readonly Dictionary<string, string> MimeTypes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            {".html", "text/html; charset=utf-8" },
+            {".htm", "text/html; charset=utf-8" },
+            {".css" , "text/css; charset=utf-8" },
+            {".js" , "application/javascript; charset=utf-8" },
+            {".json" , "application/json; charset=utf-8" },
+            {".jpg" , "image/jpeg" },
+            {".jpeg" , "image/jpeg" },
+            {".png" , "image/png" },
+            {".gif" , "image/gif" },
+            {".svg" , "image/svg+xml" },
+            {".ico" , "image/x-icon" },
+            {".webp" , "image/webp" },
+            {".txt" , "text/plain; charset=utf-8" },
+        };
+
+    public static string GetMimeType(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        MimeTypes.TryGetValue(extension, out var mimeType);
+        return mimeType?? "application/octet-stream";
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Utils\UriFactory.cs ---
+namespace MyServer_v3.Utils;
+
+public static class UriFactory
+{
+    /// <summary>
+    /// Safely converts a URL path to a physical path on disk.
+    /// </summary>
+    /// <returns>null if the path contains attempts to access beyond the rootDirectory</returns>
+    public static string? ResolveSafePath(string urlPath, string rootDirectory)
+    {
+        var relativePath = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        var absolutePath = Path.GetFullPath(Path.Combine(rootDirectory, relativePath));
+        
+        var rootAbsolutePath = Path.GetFullPath(rootDirectory);
+        if (!absolutePath.StartsWith(rootAbsolutePath, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return absolutePath;
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\MyServer_v3.csproj ---
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Folder Include="Utils\" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="server.json">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Update="static\**">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+</Project>
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\Program.cs ---
+using MyServer_v3.Framework.Configuration;
+using MyServer_v3.Framework.Http;
+
+namespace MyServer_v3;
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        await using var server = new HttpServer();
+        await server.StartAsync();
+
+        Console.WriteLine("[APP] Server is running. Type 'stop' to shut down.");
+        while (true)
+        {
+            var command = Console.ReadLine();
+            if (command?.ToLower() == "stop")
+            {
+                break;
+            }
+
+        }
+        Console.WriteLine("[APP] Shutting down...");
+    }
+}
+
+
+
+--- FILE: C:\Users\User\Desktop\MyServer_v3\MyServer_v3\server.json ---
+{
+  "Host": "127.0.0.1",
+  "Port": 8080,
+  "Path": "static/"
+}
+
+
+
