@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Controlwork_1", "Controlwork_1\Controlwork_1.csproj", "{108F9EC6-53DD-4CDD-911E-2832BCFA3903}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{108F9EC6-53DD-4CDD-911E-2832BCFA3903}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{108F9EC6-53DD-4CDD-911E-2832BCFA3903}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{108F9EC6-53DD-4CDD-911E-2832BCFA3903}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{108F9EC6-53DD-4CDD-911E-2832BCFA3903}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

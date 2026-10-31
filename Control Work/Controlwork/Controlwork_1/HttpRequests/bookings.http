@@ -1,0 +1,65 @@
+@host = http://127.0.0.1:8080
+@contentType = application/x-www-form-urlencoded
+
+### 1. Список бронирований (без фильтра)
+GET {{host}}/api/bookings
+
+### 2. Список с фильтром по столику
+GET {{host}}/api/bookings?tableNumber=5
+
+### 3. Форма создания (HTML)
+GET {{host}}/api/bookings/create
+
+### 4. Создание бронирования — Анна, столик 5 (→ 303, id=1)
+POST {{host}}/api/bookings/create
+Content-Type: {{contentType}}
+
+visitor=Анна&tableNumber=5
+
+### 5. Создание бронирования — Иван, столик 5 (→ 303, id=2)
+POST {{host}}/api/bookings/create
+Content-Type: {{contentType}}
+
+visitor=Иван&tableNumber=5
+
+### 6. Создание бронирования — Мария, столик 7 (→ 303, id=3)
+POST {{host}}/api/bookings/create
+Content-Type: {{contentType}}
+
+visitor=Мария&tableNumber=7
+
+### 7. Просмотр бронирования #1
+GET {{host}}/api/bookings/details?id=1
+
+### 8. Просмотр бронирования #2
+GET {{host}}/api/bookings/details?id=2
+
+### 9. Подтверждение бронирования #1 (→ 204 No Content)
+PUT {{host}}/api/bookings/update?id=1
+Content-Type: {{contentType}}
+
+visitor=Анна&tableNumber=5&status=confirmed
+
+### 10. Попытка подтвердить #2 на тот же столик 5 (→ 409 Conflict)
+PUT {{host}}/api/bookings/update?id=2
+Content-Type: {{contentType}}
+
+visitor=Иван&tableNumber=5&status=confirmed
+
+### 11. Подтверждение #3 на столик 7 (→ 204 No Content)
+PUT {{host}}/api/bookings/update?id=3
+Content-Type: {{contentType}}
+
+visitor=Мария&tableNumber=7&status=confirmed
+
+### 12. Список после обновлений
+GET {{host}}/api/bookings
+
+### 13. Фильтр по столику 5 после обновлений
+GET {{host}}/api/bookings?tableNumber=5
+
+### 14. Возврат #1 в pending (→ 204)
+PUT {{host}}/api/bookings/update?id=1
+Content-Type: {{contentType}}
+
+visitor=Анна&tableNumber=5&status=pending

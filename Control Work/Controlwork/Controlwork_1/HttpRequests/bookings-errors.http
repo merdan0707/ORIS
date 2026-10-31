@@ -1,0 +1,50 @@
+@host = http://127.0.0.1:8080
+@contentType = application/x-www-form-urlencoded
+
+### 400 — нечисловой id в details
+GET {{host}}/api/bookings/details?id=abc
+
+### 400 — tableNumber вне диапазона
+GET {{host}}/api/bookings?tableNumber=25
+
+### 400 — имя короче 2 символов
+POST {{host}}/api/bookings/create
+Content-Type: {{contentType}}
+
+visitor=A&tableNumber=5
+
+### 400 — имя длиннее 60 символов
+POST {{host}}/api/bookings/create
+Content-Type: {{contentType}}
+
+visitor=AAAAAAAAAAAAAAAAAAAAAAA&tableNumber=5
+
+### 400 — столик вне диапазона
+POST {{host}}/api/bookings/create
+Content-Type: {{contentType}}
+
+visitor=Анна&tableNumber=25
+
+### 400 — невалидный статус в PUT
+PUT {{host}}/api/bookings/update?id=1
+Content-Type: {{contentType}}
+
+visitor=Анна&tableNumber=5&status=cancelled
+
+### 404 — несуществующий id в details
+GET {{host}}/api/bookings/details?id=999
+
+### 404 — PUT несуществующего id
+PUT {{host}}/api/bookings/update?id=999
+Content-Type: {{contentType}}
+
+visitor=Анна&tableNumber=5&status=pending
+
+### 405 — POST на GET-маршрут
+POST {{host}}/api/bookings/details?id=1
+
+### 405 — GET на PUT-маршрут
+GET {{host}}/api/bookings/update?id=1
+
+### 404 — несуществующий маршрут
+GET {{host}}/api/bookings/unknown
