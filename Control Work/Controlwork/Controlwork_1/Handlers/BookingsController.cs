@@ -16,7 +16,7 @@ public class BookingsController
 
     // GET /api/bookings?tableNumber=5
     [HttpGet]
-    [Route("bookings")]
+    [Route("")]
     public IActionResult List([FromQuery] int? tableNumber = null)
     {
         if (tableNumber is < 1 or > 20)
@@ -60,7 +60,7 @@ public class BookingsController
 
     // GET /api/bookings/details?id=1
     [HttpGet]
-    [Route("bookings/details")]
+    [Route("details")]
     public IActionResult Details([FromQuery] int id)
     {
         var b = Store.GetById(id)
@@ -80,7 +80,7 @@ public class BookingsController
 
     // GET /api/bookings/create — форма
     [HttpGet]
-    [Route("bookings/create")]
+    [Route("create")]
     public IActionResult CreateForm()
     {
         var sb = new StringBuilder();
@@ -98,7 +98,7 @@ public class BookingsController
 
     // POST /api/bookings/create
     [HttpPost]
-    [Route("bookings/create")]
+    [Route("create")]
     public IActionResult Create([FromForm] string visitor, [FromForm] int tableNumber)
     {
         var created = Store.Create(visitor, tableNumber);
@@ -107,14 +107,16 @@ public class BookingsController
 
     // PUT /api/bookings/update?id=1
     [HttpPut]
-    [Route("bookings/update")]
+    [Route("update")]
     public IActionResult Update(
         [FromQuery] int id,
         [FromForm] string visitor,
         [FromForm] int tableNumber,
         [FromForm] BookingStatus status)
     {
-        Store.Update(id, visitor, tableNumber, status);
+        _ = Store.Update(id, visitor, tableNumber, status)
+            ?? throw new KeyNotFoundException($"Бронирование #{id} не найдено.");
+
         return new NoContentResult();
     }
 }

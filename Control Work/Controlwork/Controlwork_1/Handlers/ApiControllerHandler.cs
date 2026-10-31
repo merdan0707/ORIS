@@ -10,6 +10,8 @@ namespace Controlwork_1.Handlers;
 
 public class ApiControllerHandler : RequestHandler
 {
+    private const string ApiPrefix = "api/";
+
     private readonly Dictionary<string, EndPointMetadata> _routes =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -44,16 +46,18 @@ public class ApiControllerHandler : RequestHandler
                     : $"{controllerTemplate}/{methodTemplate}".Trim('/');
 
                 _routes[fullRoute] = new EndPointMetadata(type, method, httpMethod, AnalyzeParameters(method));
-                Console.WriteLine($"[API] {httpMethod} /{fullRoute}");
+                Console.WriteLine($"[API] {httpMethod} /{ApiPrefix}{fullRoute}");
             }
         }
     }
 
     private static List<ParameterInstruction> AnalyzeParameters(MethodInfo method)
     {
-        var isPost = method.GetCustomAttribute<HttpPostAttribute>() != null;
-        var isPut  = method.GetCustomAttribute<HttpPutAttribute>()  != null;
-        var defaultSource = (isPost || isPut) ? ParameterSource.Form : ParameterSource.Query;
+        var defaultSource =
+            method.GetCustomAttribute<HttpPostAttribute>() != null ||
+            method.GetCustomAttribute<HttpPutAttribute>()  != null
+                ? ParameterSource.Form
+                : ParameterSource.Query;
 
         return method.GetParameters()
             .Select(p =>
@@ -71,13 +75,15 @@ public class ApiControllerHandler : RequestHandler
     protected override async Task<bool> HandleCoreAsync(HttpListenerContext context)
     {
         var request = context.Request;
-        var response = context.Response;
 
         var path = request.Url!.LocalPath.TrimStart('/');
-        if (!path.StartsWith("api/", StringComparison.OrdinalIgnoreCase))
+        if (!path.StartsWith(ApiPrefix, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        if (!_routes.TryGetValue(path, out var endpoint))
+        // "api/bookings/details" -> "bookings/details"
+        var routeKey = path[ApiPrefix.Length..];
+
+        if (!_routes.TryGetValue(routeKey, out var endpoint))
             return false;
 
         if (endpoint.HttpMethod != request.HttpMethod)
@@ -107,13 +113,11 @@ public class ApiControllerHandler : RequestHandler
 
             return true;
         }
-        // Оборачиваемое исключение из контроллера
         catch (TargetInvocationException tie) when (tie.InnerException != null)
         {
             await WriteErrorForAsync(context, tie.InnerException);
             return true;
         }
-        // Прямое исключение из ExtractParametersAsync (до Invoke)
         catch (ArgumentException argEx)
         {
             await new ErrorResult((int)HttpStatusCode.BadRequest, argEx.Message).ExecuteAsync(context);
