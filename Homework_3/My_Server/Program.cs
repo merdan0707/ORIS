@@ -1,6 +1,4 @@
-﻿using My_Server.Framework.Http;
-
-namespace My_Server;
+﻿namespace My_Server;
 
 class Program
 {
