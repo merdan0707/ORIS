@@ -8,6 +8,13 @@
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
 # User-specific files
+bin/
+obj/
+server.Local.json
+appsettings.*.json
+settings.json
+.env
+.idea/
 *.rsuser
 *.suo
 *.user
