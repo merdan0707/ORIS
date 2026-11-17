@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8"><title>Профиль пользователя</title></head>
+<body>
+<h1>Профиль пользователя</h1>
+<p>Имя: ${Name}</p>
+<p>Возраст: ${Age}</p>
+<p>Email: ${Email}</p>
+$if(IsActive)
+<p style="color:green">Статус: активен</p>
+$else
+<p style="color:red">Статус: неактивен</p>
+$endif
+</body>
+</html>

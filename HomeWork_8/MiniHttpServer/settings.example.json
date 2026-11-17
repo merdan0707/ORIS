@@ -1,0 +1,14 @@
+{
+  "Host": "127.0.0.1",
+  "Port": 8080,
+  "Path": "static/",
+  "Smtp": {
+    "Host": "smtp.yandex.ru",
+    "Port": 465,
+    "Email": "your-email@yandex.ru",
+    "AppPassword": "YOUR_APP_PASSWORD",
+    "FullName": "Your Name",
+    "Group": "Your Group",
+    "LinkToZip": "https://your-link-to-disk"
+  }
+}
