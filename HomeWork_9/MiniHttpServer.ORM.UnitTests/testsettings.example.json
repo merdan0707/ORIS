@@ -1,0 +1,3 @@
+{
+  "ConnectionString": "Host=localhost;Port=5432;Database=DbName;Username=username;Password=YOUR_PASSWORD"
+}

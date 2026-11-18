@@ -13,6 +13,7 @@ obj/
 server.Local.json
 appsettings.*.json
 settings.json
+testsettings.json
 .env
 .idea/
 *.rsuser
